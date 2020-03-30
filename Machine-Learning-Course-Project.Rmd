@@ -1,0 +1,102 @@
+---
+title: "Machine Learning - Course Project"
+author: "Francis Labrecque"
+date: "3/28/2020"
+output: md_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Synopsis
+
+The goal of this report is to propose a prediction model on how well people do a barbell lifts. To do so, they collected data from 6 participants while wearing accelerometers on their belt, forearm, arm, and a dumbell. They were asked to perform the barbell lifts correctly ("classe"=A) and incorrectly in 4 different ways ("classe"=c(B:E)). 
+
+## Loading packages
+
+The following are all the different libraries needed to complete this report.
+```{r,warning=FALSE,message=FALSE}
+set.seed(4678)
+library(caret)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+```
+
+
+## Data loading and Preprocessing
+
+The dataset can be found here http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har#literature. Once downloaded to our working directory, we take a quick look at the data using a spreadsheet program and noticed that the data contains different types of missing values. In order to harmonize them, we set them to NA through the read.csv function. 
+```{r}
+trainingDB <- read.csv("pml-training.csv", header = TRUE, na.strings=c("", "#DIV/0!", "NA"))
+valid <- read.csv("pml-testing.csv", header = TRUE, na.strings=c("", "#DIV/0!", "NA"))
+```
+
+The data was already split into training and testing sets. We are setting the testing set as our validation set and we are splitting the training set into new training and testing sets.
+
+Since predictive models do not deal well with missing values, we use the following function to have a look at the number of NA values for each variables (Because of its length, the results are not shown). we found that many variables are populated with 98%+ of missing values and we proceed with removing them.
+```{r, results="hide"}
+sapply(trainingDB, function(x)sum(is.na(x)))
+trainingDB <- trainingDB %>% select_if(~ !any(is.na(.)))
+valid <- valid %>% select_if(~ !any(is.na(.)))
+```
+
+We also remove the first seven variables, as they are not relevant for this study.
+```{r}
+trainingDB <- trainingDB[,-c(1:7)]
+valid <- valid[,c(1:7)]
+```
+
+We now create a testing set out of the training set:
+```{r}
+inTrain <- createDataPartition(y=trainingDB$classe, p=0.6, list = FALSE)
+training <- trainingDB[inTrain,]
+testing <- trainingDB[-inTrain,]
+```
+
+## Exploratory Data Analysis
+
+Let's explore the training dataset.
+```{r, collapse=TRUE}
+dim(training)
+summary(training)
+```
+
+Since some variables have skewed distribution or have outliers (see plotted examples), a classification tree type model will be more appropriate as a predictive model.
+```{r,warning=FALSE,message=FALSE}
+hist1 <- qplot(training$gyros_dumbbell_x, geom="histogram", binwidth = 1) + scale_y_log10()
+hist2 <- qplot(training$magnet_dumbbell_y, geom="histogram", binwidth = 20) + scale_y_log10()
+hist3 <- qplot(training$yaw_forearm, geom="histogram", binwidth = 10) + scale_y_log10()
+grid.arrange(hist1, hist2, hist3, ncol=3)
+```
+
+## Variable Selection
+
+Since we have a high number of variables, let's see if some of them are highly correlated.
+```{r}
+M <- abs(cor(training[,-53]))
+diag(M) <- 0
+which(M>0.9,arr.ind = TRUE)
+```
+
+Many variables are highly correlated, but it is not surprising due to the way the sensors are positioned on the body. Since it is difficult to determine which ones are the most important, we decide to use all the variables for our model.
+
+## Model Selection
+
+Since we have a large number of highly correlated variables that have non normal distribution, we decided to use a random forest to create our predictive model as it can handle these challenges very well. We then used this model to predict the values in our testing set. The accuracy of our model on the testing set is then displayed.
+```{r, cache=TRUE}
+modFit <- train(classe ~ ., data = training, method = "rf")
+pred <- predict(modFit, testing)
+confusionMatrix(pred, testing$classe)
+```
+
+Considering the accuracy confidence interval, our out of sample error is still less than 1% on the testing set.
+
+## Cross Validation
+
+```{r}
+modFit
+```
+
+For a random forest prediction model, the cross validation is done intrinsically. As we can see above, there was 25 resampling repetitions as part of the model creation process.
